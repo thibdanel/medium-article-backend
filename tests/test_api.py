@@ -195,6 +195,54 @@ def test_public_extract_by_post_id_accepts_valid_post_id_without_api_key(client,
     assert payload["complete"] is True
 
 
+def test_public_extract_by_post_id_ignores_utm_query_parameter(client, monkeypatch):
+    async def fake_extract(source_url, post_id):
+        assert source_url is None
+        assert post_id == TEST_POST_ID
+        return ExtractedArticle(
+            status="ok",
+            source_url=TEST_URL,
+            title="Beyond Code Generation: AI for the Full Data Science Workflow",
+            author="Test Author",
+            content="same article content",
+            word_count=1939,
+            complete=True,
+        )
+
+    monkeypatch.setattr("app.main.extract_article", fake_extract)
+
+    plain_response = client.get(f"/api/public/extract/{TEST_POST_ID}")
+    tracked_response = client.get(f"/api/public/extract/{TEST_POST_ID}?utm_source=chatgpt.com")
+
+    assert plain_response.status_code == 200
+    assert tracked_response.status_code == 200
+    assert tracked_response.json() == plain_response.json()
+
+
+def test_public_extract_by_post_id_ignores_arbitrary_query_parameter(client, monkeypatch):
+    async def fake_extract(source_url, post_id):
+        assert source_url is None
+        assert post_id == TEST_POST_ID
+        return ExtractedArticle(
+            status="ok",
+            source_url=TEST_URL,
+            title="Beyond Code Generation: AI for the Full Data Science Workflow",
+            author="Test Author",
+            content="same article content",
+            word_count=1939,
+            complete=True,
+        )
+
+    monkeypatch.setattr("app.main.extract_article", fake_extract)
+
+    plain_response = client.get(f"/api/public/extract/{TEST_POST_ID}")
+    tracked_response = client.get(f"/api/public/extract/{TEST_POST_ID}?foo=bar")
+
+    assert plain_response.status_code == 200
+    assert tracked_response.status_code == 200
+    assert tracked_response.json() == plain_response.json()
+
+
 @pytest.mark.parametrize(
     "post_id",
     [
@@ -236,7 +284,7 @@ def test_public_extract_by_post_id_refuses_parent_path_attempt(client, post_id):
         assert response.json() == {"status": "error", "error": "Invalid Medium post ID"}
 
 
-@pytest.mark.parametrize("post_id", ["ef875dce8453!", "ef875dce8453?x=1", "ef875dce8453%00", "ef875dce8453.json"])
+@pytest.mark.parametrize("post_id", ["ef875dce8453!", "ef875dce8453%00", "ef875dce8453.json"])
 def test_public_extract_by_post_id_refuses_special_characters(client, post_id):
     response = client.get(f"/api/public/extract/{post_id}")
 

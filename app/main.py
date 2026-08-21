@@ -203,8 +203,6 @@ async def public_extract_by_post_id(
     post_id: str,
 ) -> ExtractResponse:
     try:
-        if request.url.query:
-            raise InvalidMediumUrl("Invalid Medium post ID")
         validated_post_id = validate_public_post_id(post_id)
     except InvalidMediumUrl:
         logger.info("public_extract_rejected endpoint=/api/public/extract/{post_id} invalid_post_id=%s", post_id)
