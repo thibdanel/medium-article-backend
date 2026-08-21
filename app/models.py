@@ -8,7 +8,7 @@ class HealthResponse(BaseModel):
 
 class ExtractResponse(BaseModel):
     status: str
-    source_url: str
+    source_url: Optional[str] = None
     title: Optional[str] = None
     author: Optional[str] = None
     content: str = ""

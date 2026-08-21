@@ -4,14 +4,20 @@ import logging
 import os
 import time
 from collections import defaultdict, deque
-from typing import Deque
+from typing import Deque, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from app.extractor import ArticleUnavailable, ResponseTooLarge, UpstreamTimeout, extract_article
 from app.models import ErrorResponse, ExtractResponse, HealthResponse
-from app.security import InvalidMediumUrl, require_api_key, validate_medium_url, validate_public_medium_url
+from app.security import (
+    InvalidMediumUrl,
+    require_api_key,
+    validate_medium_url,
+    validate_public_medium_url,
+    validate_public_post_id,
+)
 
 
 logging.basicConfig(
@@ -72,7 +78,7 @@ def _check_public_rate_limit(request: Request) -> None:
     bucket.append(now)
 
 
-async def _extract_response(source_url: str, post_id: str) -> ExtractResponse:
+async def _extract_response(source_url: Optional[str], post_id: str) -> ExtractResponse:
     try:
         article = await extract_article(source_url, post_id)
     except UpstreamTimeout:
@@ -83,6 +89,46 @@ async def _extract_response(source_url: str, post_id: str) -> ExtractResponse:
         raise HTTPException(status_code=502, detail={"status": "error", "error": "Unable to retrieve article"})
 
     return ExtractResponse(**article.__dict__)
+
+
+async def _public_extract_response(
+    *,
+    request: Request,
+    endpoint: str,
+    source_url: Optional[str],
+    post_id: str,
+    domain: str,
+) -> ExtractResponse:
+    started = time.perf_counter()
+    status = "error"
+    word_count = 0
+
+    try:
+        _check_public_rate_limit(request)
+        article = await _extract_response(source_url, post_id)
+
+        if len(article.content) > PUBLIC_MAX_CONTENT_CHARS:
+            raise HTTPException(
+                status_code=413,
+                detail={"status": "error", "error": "Article content exceeds public response size limit"},
+            )
+
+        status = article.status
+        word_count = article.word_count
+        return article
+    except HTTPException as exc:
+        status = str(exc.status_code)
+        raise
+    finally:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logger.info(
+            "public_extract endpoint=%s domain=%s duration_ms=%s status=%s word_count=%s",
+            endpoint,
+            domain,
+            elapsed_ms,
+            status,
+            word_count,
+        )
 
 
 @app.get(
@@ -126,37 +172,48 @@ async def public_extract(
     request: Request,
     url: str = Query(..., min_length=10),
 ) -> ExtractResponse:
-    started = time.perf_counter()
-    domain = "unknown"
-    status = "error"
-    word_count = 0
-
     try:
-        _check_public_rate_limit(request)
         source_url, post_id, domain = validate_public_medium_url(url)
-        article = await _extract_response(source_url, post_id)
-
-        if len(article.content) > PUBLIC_MAX_CONTENT_CHARS:
-            raise HTTPException(
-                status_code=413,
-                detail={"status": "error", "error": "Article content exceeds public response size limit"},
-            )
-
-        status = article.status
-        word_count = article.word_count
-        return article
     except InvalidMediumUrl:
-        status = "invalid_url"
+        logger.info("public_extract_rejected endpoint=/api/public/extract invalid_url=%s", url)
         raise HTTPException(status_code=400, detail={"status": "error", "error": "Invalid Medium URL"})
-    except HTTPException as exc:
-        status = str(exc.status_code)
-        raise
-    finally:
-        elapsed_ms = int((time.perf_counter() - started) * 1000)
-        logger.info(
-            "public_extract endpoint=/api/public/extract domain=%s duration_ms=%s status=%s word_count=%s",
-            domain,
-            elapsed_ms,
-            status,
-            word_count,
-        )
+
+    return await _public_extract_response(
+        request=request,
+        endpoint="/api/public/extract",
+        source_url=source_url,
+        post_id=post_id,
+        domain=domain,
+    )
+
+
+@app.get(
+    "/api/public/extract/{post_id:path}",
+    response_model=ExtractResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        408: {"model": ErrorResponse},
+        413: {"model": ErrorResponse},
+        429: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+    },
+)
+async def public_extract_by_post_id(
+    request: Request,
+    post_id: str,
+) -> ExtractResponse:
+    try:
+        if request.url.query:
+            raise InvalidMediumUrl("Invalid Medium post ID")
+        validated_post_id = validate_public_post_id(post_id)
+    except InvalidMediumUrl:
+        logger.info("public_extract_rejected endpoint=/api/public/extract/{post_id} invalid_post_id=%s", post_id)
+        raise HTTPException(status_code=400, detail={"status": "error", "error": "Invalid Medium post ID"})
+
+    return await _public_extract_response(
+        request=request,
+        endpoint="/api/public/extract/{post_id}",
+        source_url=None,
+        post_id=validated_post_id,
+        domain="medium_graphql",
+    )

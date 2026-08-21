@@ -28,6 +28,7 @@ ALLOWED_MEDIUM_HOSTS = {
 
 LOCAL_HOSTNAMES = {"localhost", "localhost.localdomain"}
 POST_ID_PATTERN = re.compile(r"^[A-Za-z0-9]{8,12}$")
+PUBLIC_POST_ID_PATTERN = re.compile(r"^[0-9a-f]{12}$", re.IGNORECASE)
 
 
 class InvalidMediumUrl(ValueError):
@@ -110,6 +111,12 @@ def validate_public_medium_url(url: str) -> Tuple[str, str, str]:
 
     clean_url = parsed._replace(query="", fragment="").geturl()
     return clean_url, post_id, host
+
+
+def validate_public_post_id(post_id: str) -> str:
+    if not PUBLIC_POST_ID_PATTERN.fullmatch(post_id or ""):
+        raise InvalidMediumUrl("Invalid Medium post ID")
+    return post_id.lower()
 
 
 def extract_post_id(path: str) -> Optional[str]:

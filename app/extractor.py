@@ -42,7 +42,7 @@ class ResponseTooLarge(ExtractorError):
 @dataclass(frozen=True)
 class ExtractedArticle:
     status: str
-    source_url: str
+    source_url: Optional[str]
     title: Optional[str]
     author: Optional[str]
     content: str
@@ -148,12 +148,13 @@ async def fetch_medium_post(post_id: str, client: Optional[httpx.AsyncClient] = 
         raise ArticleUnavailable("Unable to retrieve article") from exc
 
 
-def extract_text_from_post_data(post_data: Dict[str, Any], source_url: str) -> ExtractedArticle:
+def extract_text_from_post_data(post_data: Dict[str, Any], source_url: Optional[str]) -> ExtractedArticle:
     post = post_data.get("data", {}).get("post")
     if not post:
         raise ArticleUnavailable("Unable to retrieve article")
 
     title = _clean_text(post.get("title"))
+    source_url = source_url or _clean_text(post.get("mediumUrl"))
     creator = post.get("creator") or {}
     author = _clean_text(creator.get("name")) or _clean_text(creator.get("username"))
 
@@ -255,7 +256,7 @@ def assess_completeness(
     return True, None
 
 
-async def extract_article(source_url: str, post_id: str) -> ExtractedArticle:
+async def extract_article(source_url: Optional[str], post_id: str) -> ExtractedArticle:
     started = time.perf_counter()
     try:
         post_data = await fetch_medium_post(post_id)

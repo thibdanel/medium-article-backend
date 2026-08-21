@@ -9,6 +9,7 @@ Le service expose deux endpoints :
 - `GET /api/health` : vérifie que l'API répond.
 - `GET /api/extract?url=<URL_MEDIUM>` : valide une URL Medium, récupère l'article via l'API GraphQL Medium, extrait les paragraphes utiles et renvoie du JSON.
 - `GET /api/public/extract?url=<URL_MEDIUM>` : endpoint public en lecture seule pour les taches ChatGPT, limite a `medium.com` et `*.medium.com`, sans header `X-API-Key`.
+- `GET /api/public/extract/<POST_ID>` : endpoint public en lecture seule qui recoit uniquement un identifiant Medium de 12 caracteres hexadecimaux, sans URL imbriquee ni header `X-API-Key`.
 
 L'URL fournie par le client n'est pas appelée directement comme proxy. Elle sert uniquement à valider le domaine et extraire l'identifiant Medium de l'article. L'appel réseau d'extraction part ensuite vers `https://medium.com/_/graphql`.
 
@@ -113,6 +114,14 @@ curl \
 ```
 
 La reponse JSON suit le meme format que `/api/extract`. Cet endpoint ne remplace pas `/api/extract` : il ne demande pas de cle API, mais il est volontairement plus limite.
+
+### Public Extract By Post ID
+
+```bash
+curl "http://localhost:8000/api/public/extract/ef875dce8453"
+```
+
+Ce chemin utilise directement l'identifiant Medium pour appeler GraphQL. Il refuse les URLs, les segments de chemin, les query strings et les caracteres hors format hexadécimal strict.
 
 ## Gestion des erreurs
 
