@@ -8,6 +8,7 @@ Le service expose deux endpoints :
 
 - `GET /api/health` : vérifie que l'API répond.
 - `GET /api/extract?url=<URL_MEDIUM>` : valide une URL Medium, récupère l'article via l'API GraphQL Medium, extrait les paragraphes utiles et renvoie du JSON.
+- `GET /api/public/extract?url=<URL_MEDIUM>` : endpoint public en lecture seule pour les taches ChatGPT, limite a `medium.com` et `*.medium.com`, sans header `X-API-Key`.
 
 L'URL fournie par le client n'est pas appelée directement comme proxy. Elle sert uniquement à valider le domaine et extraire l'identifiant Medium de l'article. L'appel réseau d'extraction part ensuite vers `https://medium.com/_/graphql`.
 
@@ -54,6 +55,9 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - `API_KEY` : secret attendu dans le header `X-API-Key`.
 - `UPSTREAM_TIMEOUT_SECONDS` : timeout de l'appel Medium, par defaut `10`.
 - `MAX_RESPONSE_BYTES` : taille maximale de reponse Medium, par defaut `5242880`.
+- `PUBLIC_RATE_LIMIT_REQUESTS` : maximum de requetes publiques par fenetre et par IP, par defaut `20`.
+- `PUBLIC_RATE_LIMIT_WINDOW_SECONDS` : fenetre du rate limiting public, par defaut `3600`.
+- `PUBLIC_MAX_CONTENT_CHARS` : taille maximale du champ `content` renvoye par l'endpoint public, par defaut `200000`.
 - `MIN_COMPLETE_WORDS` : seuil indicatif de completude, par defaut `700`.
 - `MIN_COMPLETE_PARAGRAPHS` : seuil indicatif de paragraphes, par defaut `5`.
 - `LOG_LEVEL` : niveau de logs, par defaut `INFO`.
@@ -101,12 +105,22 @@ Exemple de reponse :
 
 Si l'extraction semble incomplete, le service renvoie `status: "partial"` et `complete: false`. Le backend n'invente jamais le contenu manquant.
 
+### Public Extract
+
+```bash
+curl \
+  "http://localhost:8000/api/public/extract?url=https://medium.com/data-science-collective/beyond-code-generation-ai-for-the-full-data-science-workflow-ef875dce8453"
+```
+
+La reponse JSON suit le meme format que `/api/extract`. Cet endpoint ne remplace pas `/api/extract` : il ne demande pas de cle API, mais il est volontairement plus limite.
+
 ## Gestion des erreurs
 
 - `400` : URL invalide ou domaine non autorise.
 - `401` : cle API absente ou incorrecte.
 - `408` : timeout upstream Medium.
-- `413` : reponse upstream trop volumineuse.
+- `413` : reponse upstream trop volumineuse ou contenu public trop volumineux.
+- `429` : rate limit public depasse.
 - `502` : article inaccessible ou reponse Medium inutilisable.
 
 ## Tests
@@ -167,6 +181,7 @@ Ce projet est publie sous MIT, avec attribution Freedium pour les parties adapte
 
 - Medium peut modifier son schema GraphQL ou bloquer certains environnements cloud.
 - La completude est detectee par heuristiques raisonnables, pas par preuve cryptographique.
-- Certains domaines Medium custom peuvent devoir etre ajoutes a `ALLOWED_MEDIUM_HOSTS`.
+- Certains domaines Medium custom peuvent devoir etre ajoutes a `ALLOWED_MEDIUM_HOSTS` pour l'endpoint prive ; l'endpoint public reste limite a `medium.com` et `*.medium.com`.
+- Le rate limiting public est en memoire et adapte a un deploiement Railway mono-instance ; il n'est pas partage entre plusieurs replicas et se reinitialise au redemarrage.
 - Les embeds, images et markups riches ne sont pas rendus ; l'API renvoie surtout du texte.
 - Les articles necessitant une authentification Medium specifique peuvent rester inaccessibles.

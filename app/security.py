@@ -70,6 +70,10 @@ def _is_allowed_medium_host(host: str) -> bool:
     return host == "medium.com" or host.endswith(".medium.com") or host in ALLOWED_MEDIUM_HOSTS
 
 
+def _is_public_medium_host(host: str) -> bool:
+    return host == "medium.com" or host.endswith(".medium.com")
+
+
 def validate_medium_url(url: str) -> Tuple[str, str]:
     parsed = urlparse(url)
     if parsed.scheme != "https":
@@ -87,6 +91,25 @@ def validate_medium_url(url: str) -> Tuple[str, str]:
 
     clean_url = parsed._replace(query="", fragment="").geturl()
     return clean_url, post_id
+
+
+def validate_public_medium_url(url: str) -> Tuple[str, str, str]:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise InvalidMediumUrl("Invalid Medium URL")
+
+    host = _normalize_host(parsed.hostname)
+    _reject_local_or_ip_host(host)
+
+    if not _is_public_medium_host(host):
+        raise InvalidMediumUrl("Invalid Medium URL")
+
+    post_id = extract_post_id(parsed.path)
+    if not post_id:
+        raise InvalidMediumUrl("Invalid Medium URL")
+
+    clean_url = parsed._replace(query="", fragment="").geturl()
+    return clean_url, post_id, host
 
 
 def extract_post_id(path: str) -> Optional[str]:

@@ -9,6 +9,7 @@ def client(monkeypatch):
     monkeypatch.setenv("API_KEY", "test-secret")
     from app.main import app
 
+    app.state.public_rate_limits.clear()
     return TestClient(app)
 
 
